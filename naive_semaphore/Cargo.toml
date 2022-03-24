@@ -1,5 +1,5 @@
 [package]
-name = "simple_semaphore"
+name = "naive_semaphore"
 version = "0.1.0"
 edition = "2021"
 author = "snusnu (SteffenW)"

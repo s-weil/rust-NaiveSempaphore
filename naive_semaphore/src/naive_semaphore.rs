@@ -77,7 +77,7 @@ mod tests {
         hm
     }
 
-    fn word_frequency(word: &str) -> HashMap<char, usize> {
+    fn char_frequency(word: &str) -> HashMap<char, usize> {
         let mut hm = HashMap::new();
         for c in word.chars() {
             if let Some(ct) = hm.get_mut(&c) {
@@ -115,9 +115,9 @@ mod tests {
                     sw.elapsed_ms()
                 );
 
-                // just as a test to simulate a heavier workload
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                let word_count = word_frequency(word);
+                // just as a test to simulate a heavier workload (but seems to cause trouble)
+                // std::thread::sleep(std::time::Duration::from_secs(1));
+                let word_count = char_frequency(word);
 
                 let res_lock = &mut ss_res.lock().unwrap();
                 aggregate_counts(res_lock, &word_count);
@@ -192,7 +192,7 @@ mod tests {
     fn test_freq_count() {
         let mut sw = stopwatch::Stopwatch::start_new();
 
-        let num_done = frequency(&ODE_AN_DIE_FREUDE, 4);
+        let num_done = frequency(&ODE_AN_DIE_FREUDE, 9);
 
         sw.stop();
         println!("done within {} ms", sw.elapsed_ms());

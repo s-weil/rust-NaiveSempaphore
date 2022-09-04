@@ -1,3 +1,3 @@
 # NaiveSempaphore
 
-Trying to write a semaphore in rust using naive logic and native types.
+Trying to write a semaphore in rust using simple logic and primitve types, just for fun.

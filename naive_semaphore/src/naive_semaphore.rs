@@ -1,18 +1,46 @@
 #![allow(dead_code)]
-use std::sync::{Condvar, Mutex};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Condvar, Mutex,
+};
+
+struct Counter {
+    current: AtomicUsize,
+}
+
+impl Counter {
+    pub fn new(current: usize) -> Self {
+        Self {
+            current: AtomicUsize::new(current),
+        }
+    }
+
+    pub fn get(&self) -> usize {
+        self.current.load(Ordering::SeqCst)
+    }
+
+    pub fn incr(&self) -> usize {
+        self.current.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub fn decr(&self) {
+        self.current.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 struct NaiveSemaphore {
-    current: Mutex<usize>,
     max: usize,
     is_locked: Mutex<bool>,
     waiter: Condvar,
+    // The count of currently running threads.
+    current: Counter,
 }
 
 impl NaiveSemaphore {
     pub fn new(max: usize) -> Self {
         Self {
             max,
-            current: Mutex::new(0),
+            current: Counter::new(0),
             is_locked: Mutex::new(false),
             waiter: Condvar::new(),
         }
@@ -20,39 +48,36 @@ impl NaiveSemaphore {
 
     /// The count of currently running threads.
     pub fn current_count(&self) -> usize {
-        self.current.lock().unwrap().clone()
+        self.current.get()
     }
 
     /// Release a waiting thread, reduce the current count.
     pub fn release_one(&self) {
-        let mut current = self.current.lock().unwrap();
-        if *current > 0 {
+        let current = self.current.get();
+
+        if current >= 1 {
             let mut is_locked = self.is_locked.lock().unwrap();
+
             if *is_locked {
                 *is_locked = false;
                 self.waiter.notify_one(); // wake up one waiting thread
             }
-            *current -= 1;
+
+            self.current.decr();
         }
     }
 
     /// Block a thread in case the current count exceeds 'max'.
     pub fn wait(&self) {
         let mut locked = self.is_locked.lock().unwrap();
-
         if *locked {
-            locked = self.waiter.wait(locked).unwrap();
+            let lock_result = self.waiter.wait(locked);
+            locked = lock_result.unwrap();
         }
-        drop(locked);
 
-        let mut current = self.current.lock().unwrap();
-        *current += 1;
-
-        if *current >= self.max {
-            let mut locked = self.is_locked.lock().unwrap();
+        if self.current.incr() >= self.max {
             *locked = true;
         }
-        drop(current);
     }
 }
 
@@ -91,7 +116,7 @@ mod tests {
 
     // TODO: replace println's by async logger!
     // TODO: check with spans and jaeger?
-    fn frequency(input: &'static [&str], worker_count: usize) -> usize {
+    fn frequency(input: &'static [&str], worker_count: usize, slow_down: Option<u64>) -> usize {
         let naive_semaphore = Arc::new(NaiveSemaphore::new(worker_count));
         let mut handles = vec![];
 
@@ -115,13 +140,17 @@ mod tests {
                     sw.elapsed_ms()
                 );
 
-                // just as a test to simulate a heavier workload (but seems to cause trouble)
-                // std::thread::sleep(std::time::Duration::from_secs(1));
+                // just as a test to simulate a heavier workload
+                if let Some(ms) = slow_down {
+                    std::thread::sleep(std::time::Duration::from_millis(ms));
+                }
+
                 let word_count = char_frequency(word);
 
-                let res_lock = &mut ss_res.lock().unwrap();
-                aggregate_counts(res_lock, &word_count);
-                drop(res_lock);
+                {
+                    let res_lock = &mut ss_res.lock().unwrap();
+                    aggregate_counts(res_lock, &word_count);
+                }
 
                 println!(
                     "thread {} - cc {} - {} ms: work done",
@@ -129,6 +158,7 @@ mod tests {
                     semaphore.current_count(),
                     sw.elapsed_ms()
                 );
+
                 semaphore.release_one();
                 println!(
                     "thread {} - cc {} - {} ms: released",
@@ -188,11 +218,22 @@ mod tests {
     ];
 
     #[test]
-    // #[ignore]
+    #[ignore]
+    fn test_freq_count_slow() {
+        let mut sw = stopwatch::Stopwatch::start_new();
+
+        let num_done = frequency(&ODE_AN_DIE_FREUDE, 5, Some(2));
+
+        sw.stop();
+        println!("done within {} ms", sw.elapsed_ms());
+        assert_eq!(num_done, 32);
+    }
+
+    #[test]
     fn test_freq_count() {
         let mut sw = stopwatch::Stopwatch::start_new();
 
-        let num_done = frequency(&ODE_AN_DIE_FREUDE, 9);
+        let num_done = frequency(&ODE_AN_DIE_FREUDE, 9, None);
 
         sw.stop();
         println!("done within {} ms", sw.elapsed_ms());

@@ -19,8 +19,8 @@ impl Counter {
         self.current.load(Ordering::SeqCst)
     }
 
-    pub fn incr(&self) -> usize {
-        self.current.fetch_add(1, Ordering::SeqCst)
+    pub fn incr(&self) {
+        self.current.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn decr(&self) {
@@ -74,8 +74,8 @@ impl NaiveSemaphore {
             let lock_result = self.waiter.wait(locked);
             locked = lock_result.unwrap();
         }
-
-        if self.current.incr() >= self.max {
+        self.current.incr();
+        if self.current.get() >= self.max {
             *locked = true;
         }
     }
